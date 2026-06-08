@@ -6,7 +6,6 @@ let g_wallW = 0;
 let g_wallH = 0;
 let g_builtForPtr = null;
 
-// NEW: LOS cache with TTL for better performance
 const _losCache = new Map();
 const LOS_CACHE_MAX = 512;
 const LOS_CACHE_TTL_MS = 150;
@@ -43,8 +42,6 @@ function rebuild(tm) {
     g_wallW = w;
     g_wallH = h;
     g_builtForPtr = tm;
-
-    // Clear LOS cache when map changes
     _losCache.clear();
 }
 
@@ -60,7 +57,6 @@ export function getWallCache()  { return g_wall;  }
 export function getWallCacheW() { return g_wallW; }
 export function getWallCacheH() { return g_wallH; }
 
-// IMPROVED: LOS check with caching for better performance
 export function losCheck(wx0, wy0, wx1, wy1, checkBit) {
     const wall = g_wall;
     if (!wall) return true;
@@ -72,7 +68,6 @@ export function losCheck(wx0, wy0, wx1, wy1, checkBit) {
     const ty = (wy1 / 300) | 0;
     if (cx === tx && cy === ty) return true;
 
-    // NEW: Check LOS cache
     const cacheKey = (((cx & 0x7f) << 21) | ((cy & 0x7f) << 14) | ((tx & 0x7f) << 7) | (ty & 0x7f)) | 0;
     const now = Date.now();
     const cached = _losCache.get(cacheKey);
@@ -95,11 +90,9 @@ export function losCheck(wx0, wy0, wx1, wy1, checkBit) {
         if (wall[cy * w + cx] & checkBit) { result = false; break; }
     }
 
-    // NEW: Store in cache (with periodic cleanup)
     if (_losCache.size < LOS_CACHE_MAX) {
         _losCache.set(cacheKey, { v: result, ts: now });
     } else {
-        // Purge oldest entries
         let oldest = null;
         let oldestTs = Infinity;
         for (const [k, val] of _losCache) {
@@ -112,7 +105,6 @@ export function losCheck(wx0, wy0, wx1, wy1, checkBit) {
     return result;
 }
 
-// NEW: Clear LOS cache (called when map changes)
 export function clearLosCache() {
     _losCache.clear();
 }

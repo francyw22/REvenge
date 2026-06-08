@@ -6,7 +6,6 @@ import { state } from "../utils/flags.js";
 import { scanData } from "../core/scanner.js";
 import { CONFIG } from "../utils/config.js";
 
-// ─── Pre-allocated buffers ──────────────────────────────────────────
 const _MAX_DIRS = 32;
 const _MAX_BATCH = 64;
 const _cachedScores = new Float32Array(_MAX_DIRS);
@@ -17,21 +16,18 @@ for (let _i = 0; _i < 128; _i++) _burstCandidates[_i] = { x: 0, y: 0 };
 const _burstGroupIds = new Int32Array(256);
 const _burstGroupReps = new Int32Array(256);
 
-// ─── Brawler-specific AoE impact radii ──────────────────────────────
 const BRAWLER_AOE_IMPACT_RADIUS = {
     6: 220, 9: 240, 22: 260, 37: 240, 40: 180, 48: 220, 82: 200,
-    2: 300, 8: 200, 39: 220, 43: 250,  // Added: Shelly, Nita, Tick, Frank supers
+    2: 300, 8: 200, 39: 220, 43: 250,  
 };
 
 const PROJECTILE_OWNER_SNAP_DIST_SQ = 1500 * 1500;
 const BURST_WINDOW_MS = 200;
 const URGENT_WINDOW_CACHE_MS = 200;
 
-// ─── Spin config (for spinner mode) ─────────────────────────────────
 const SPIN_RADIUS = 25;
 const SPIN_STEP = Math.PI / 4;
 
-// ─── Module-level state ─────────────────────────────────────────────
 const projectiles = new Map();
 let lastSafeDir = null;
 let lastSafeDirTime = 0;
@@ -42,19 +38,16 @@ let _lockOriginY = 0;
 let _spinPhase = 0;
 let _lastSyncTime = 0;
 
-// ─── Walk cache ─────────────────────────────────────────────────────
 const _walkCache = new Map();
 let _walkCacheTileX = -9999;
 let _walkCacheTileY = -9999;
 let _cachedUrgentWindow = 0.9;
 let _cachedUrgentWindowTs = 0;
 
-// ─── Active projectile list ─────────────────────────────────────────
 const _activeProjs = [];
 let _maxProjSpeed = 0;
 let _wc = null, _wcW = 0, _wcH = 0;
 
-// ─── Velocity-obstacle cache ────────────────────────────────────────
 const _voCache = new Float32Array(32);
 let _voCacheValid = 0;
 
@@ -62,35 +55,23 @@ let _base = null;
 let _fns = null;
 let _isBeamFn = null;
 
-// ═══════════════════════════════════════════════════════════════════════
-//  NEW: Enemy aim prediction & threat anticipation
-// ═══════════════════════════════════════════════════════════════════════
 const _enemyAimState = new Map();
 const _predictedThreats = [];
 const PREDICTION_HORIZON_S = 0.8;
 const AIM_TRACK_MAX_AGE_MS = 1500;
 
-// ═══════════════════════════════════════════════════════════════════════
-//  NEW: Juke pattern generator
-// ═══════════════════════════════════════════════════════════════════════
 let _jukePhase = 0;
-let _jukePattern = 0;  // 0=none, 1=zigzag, 2=circle, 3=feint
+let _jukePattern = 0;  
 let _jukeStartTime = 0;
 let _lastDodgeChangeTime = 0;
 let _dodgeChangeCount = 0;
 const JUKE_PATTERN_DURATION_MS = 600;
 const JUKE_MIN_CHANGES_FOR_PATTERN = 3;
 
-// ═══════════════════════════════════════════════════════════════════════
-//  NEW: Anti-corner / wall-aware escape paths
-// ═══════════════════════════════════════════════════════════════════════
 const _wallProximity = { left: 0, right: 0, up: 0, down: 0 };
 let _wallProximityValid = false;
 let _wallProximityTs = 0;
 
-// ═══════════════════════════════════════════════════════════════════════
-//  NEW: Supers / special attack awareness
-// ═══════════════════════════════════════════════════════════════════════
 const SUPER_BRAWLERS = new Set([
     'NANI', 'TARA', 'GENE', 'CROW', 'LEON', 'SPIKE', 'BO',
     'BARLEY', 'DYNAMIKE', 'TICK', 'SPROUT', 'GROM', 'WILLOW',
@@ -99,20 +80,16 @@ const SUPER_BRAWLERS = new Set([
 ]);
 
 const SUPER_DODGE_RADIUS_OVERRIDE = {
-    'NANI': 400,    // Nani super is large and homing
-    'TARA': 500,    // Tara super pulls you in
-    'SPIKE': 350,   // Spike super covers large area
-    'SHALLY': 350,  // Shelly super wide cone
-    'FRANK': 400,   // Frank super stun
+    'NANI': 400,    
+    'TARA': 500,    
+    'SPIKE': 350,   
+    'SHALLY': 350,  
+    'FRANK': 400,   
 };
 
-// ═══════════════════════════════════════════════════════════════════════
-//  NEW: Adaptive direction count
-// ═══════════════════════════════════════════════════════════════════════
 let _adaptiveDirCount = 16;
 let _lastThreatCount = 0;
 
-// ─── Direction cache ────────────────────────────────────────────────
 const CACHED_DIRECTIONS = [];
 function _checkInitDirections() {
     if (CACHED_DIRECTIONS.length === 0 && _adaptiveDirCount > 0) {
@@ -133,7 +110,6 @@ function _rebuildDirectionCache(count) {
     _cacheValid = false;
 }
 
-// ─── Public exports ──────────────────────────────────────────────────
 export function getDodgeDir() { return _dodgeDir; }
 
 export function resetAutododge() {
@@ -165,9 +141,6 @@ export function resetAutododge() {
     _rebuildDirectionCache(_adaptiveDirCount);
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  Core utility functions
-// ═══════════════════════════════════════════════════════════════════════
 
 function normalize(x, y) {
     const len = Math.sqrt(x * x + y * y);
@@ -181,7 +154,6 @@ function getUrgentWindow() {
     const speed = Math.max(420, Math.min(900, CONFIG.CHAR_SPEED || 720));
     const norm = (speed - 420) / 480;
     let base = CONFIG.T_URGENT_MIN + (1 - norm) * (CONFIG.T_URGENT_MAX - CONFIG.T_URGENT_MIN);
-    // IMPROVEMENT: Scale urgent window with threat density
     const threatDensity = _activeProjs.length;
     if (threatDensity > 5) {
         base += Math.min(0.20, (threatDensity - 5) * 0.03);
@@ -204,9 +176,6 @@ function directionDot(a, b) {
     return a.x * b.x + a.y * b.y;
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  IMPROVED: Walk ray with thicker character bounds
-// ═══════════════════════════════════════════════════════════════════════
 
 function _walkRayClear(wx0, wy0, wx1, wy1) {
     const w = _wcW, h = _wcH;
@@ -239,12 +208,11 @@ function isDirectionWalkable(fromX, fromY, dirX, dirY, charRadius) {
     else if (probeD > CONFIG.PROBE_MAX) probeD = CONFIG.PROBE_MAX;
     const toX = fromX + dirX * probeD;
     const toY = fromY + dirY * probeD;
-    const pr = charRadius * 0.85;  // IMPROVED: slightly tighter for better wall hugging
+    const pr = charRadius * 0.85;  
     const perpX = -dirY * pr;
     const perpY = dirX * pr;
 
-    // IMPROVEMENT: Add diagonal probes for more accurate walkability
-    const diag = pr * 0.707;  // cos(45) = sin(45)
+    const diag = pr * 0.707;  
     const diag1X = -dirY * diag + dirX * diag;
     const diag1Y = dirX * diag + dirY * diag;
     const diag2X = -dirY * diag - dirX * diag;
@@ -264,9 +232,6 @@ function isProjectileBlockedByWall(px, py, tx, ty) {
     return !losCheck(px, py, tx, ty, 0x40);
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  IMPROVED: Time-to-impact with acceleration awareness
-// ═══════════════════════════════════════════════════════════════════════
 
 function timeToImpact(p, myX, myY, myRadius, movingDir, tMax) {
     if (p.losBlocked || p.ignored) return -1;
@@ -275,7 +240,6 @@ function timeToImpact(p, myX, myY, myRadius, movingDir, tMax) {
     const lag = CONFIG.LAG_COMPENSATION_S;
     const isMoving = (movingDir.x !== 0 || movingDir.y !== 0);
     const haz = p.impactRadius || p.radius;
-    // IMPROVEMENT: Extra margin for super attacks
     const superExtra = p.isSuper ? CONFIG.SUPER_EXTRA_MARGIN : 0;
     const r = myRadius + haz + CONFIG.SAFETY_MARGIN + superExtra + (isMoving ? CONFIG.MOVING_EXTRA_MARGIN : 0);
     const px0 = p.x + p._svx * lag;
@@ -304,9 +268,6 @@ function isUrgentThreat(p, myX, myY, myRadius, movingDir) {
     return timeToImpact(p, myX, myY, myRadius, movingDir, getUrgentWindow()) >= 0;
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  IMPROVED: Urgent dodge with juke patterns
-// ═══════════════════════════════════════════════════════════════════════
 
 function getUrgentDodgeDir(myX, myY, myRadius, movingDir, intentDir) {
     const panicT = getClosestImpactTime(myX, myY, myRadius, movingDir, getUrgentWindow());
@@ -368,7 +329,6 @@ function getUrgentDodgeDir(myX, myY, myRadius, movingDir, intentDir) {
         const p1y = p1L < 1e-6 ? 0 :  adx / p1L;
         const p2x = -p1x, p2y = -p1y;
 
-        // IMPROVEMENT: Add juke bias based on current pattern
         const jk = _getJukeBias(myX, myY, awX, awY);
 
         const c1x = p1x * perpW + awX * awayW + ix + jk.x;
@@ -389,7 +349,6 @@ function getUrgentDodgeDir(myX, myY, myRadius, movingDir, intentDir) {
             c.y = c2L < 1e-6 ? 0 : c2y / c2L;
         }
 
-        // IMPROVEMENT: Add extra candidate between perpendicular and away for better escape paths
         if (count < maxOut) {
             const emx = (p1x + awX) * 0.5 * perpW + awX * awayW * 0.5 + ix;
             const emy = (p1y + awY) * 0.5 * perpW + awY * awayW * 0.5 + iy;
@@ -416,7 +375,6 @@ function getUrgentDodgeDir(myX, myY, myRadius, movingDir, intentDir) {
         }
     }
 
-    // Also score the standard cached directions
     const n2 = _scoreBatchInto(CACHED_DIRECTIONS, myX, myY, myRadius, sIntent, _batchScores);
     for (let i = 0; i < n2; i++) {
         const s = _batchScores[i];
@@ -427,13 +385,9 @@ function getUrgentDodgeDir(myX, myY, myRadius, movingDir, intentDir) {
     return { dir: bestDir };
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  NEW: Juke pattern system
-// ═══════════════════════════════════════════════════════════════════════
 
 function _detectJukePattern() {
     const now = Date.now();
-    // If we've been changing direction frequently, we're being targeted
     if (now - _lastDodgeChangeTime < 300) {
         _dodgeChangeCount++;
     } else {
@@ -442,18 +396,16 @@ function _detectJukePattern() {
     _lastDodgeChangeTime = now;
 
     if (_dodgeChangeCount >= JUKE_MIN_CHANGES_FOR_PATTERN) {
-        // Select juke pattern based on situation
         if (_dodgeChangeCount > 6) {
-            _jukePattern = 3;  // feint - most aggressive
+            _jukePattern = 3;  
         } else if (_wallProximityValid && (_wallProximity.left > 2 || _wallProximity.right > 2)) {
-            _jukePattern = 2;  // circle when near walls
+            _jukePattern = 2;  
         } else {
-            _jukePattern = 1;  // zigzag in open
+            _jukePattern = 1;  
         }
         if (_jukeStartTime === 0) _jukeStartTime = now;
     }
 
-    // Reset pattern after duration
     if (_jukeStartTime > 0 && now - _jukeStartTime > JUKE_PATTERN_DURATION_MS) {
         _jukePattern = 0;
         _jukeStartTime = 0;
@@ -469,19 +421,19 @@ function _getJukeBias(myX, myY, awayX, awayY) {
     const bias = CONFIG.JUKE_BIAS_STRENGTH;
 
     switch (_jukePattern) {
-        case 1: { // Zigzag
+        case 1: { 
             _jukePhase += elapsed * CONFIG.JUKE_ZIGZAG_FREQ;
             const sign = Math.sin(_jukePhase * Math.PI) > 0 ? 1 : -1;
             return { x: -awayY * sign * bias, y: awayX * sign * bias };
         }
-        case 2: { // Circle
+        case 2: { 
             _jukePhase += elapsed * CONFIG.JUKE_CIRCLE_FREQ;
             return {
                 x: (awayX * Math.cos(_jukePhase) - awayY * Math.sin(_jukePhase) - awayX) * bias,
                 y: (awayX * Math.sin(_jukePhase) + awayY * Math.cos(_jukePhase) - awayY) * bias,
             };
         }
-        case 3: { // Feint: short burst one way then the other
+        case 3: { 
             _jukePhase += elapsed * CONFIG.JUKE_FEINT_FREQ;
             const phase = (_jukePhase % 4);
             const sign = phase < 1 ? 1 : (phase < 2 ? 0 : -1);
@@ -492,9 +444,6 @@ function _getJukeBias(myX, myY, awayX, awayY) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  NEW: Wall proximity analysis for anti-cornering
-// ═══════════════════════════════════════════════════════════════════════
 
 function _updateWallProximity(myX, myY) {
     const now = Date.now();
@@ -532,7 +481,6 @@ function _wallEscapePenalty(dirX, dirY) {
     let penalty = 0;
     const thr = CONFIG.WALL_CORNER_THRESHOLD;
 
-    // Penalize moving toward walls that are very close
     if (dirX < -0.3 && _wallProximity.left >= thr) {
         penalty += (_wallProximity.left - thr + 1) * CONFIG.WALL_PROXIMITY_PENALTY;
     }
@@ -546,7 +494,6 @@ function _wallEscapePenalty(dirX, dirY) {
         penalty += (_wallProximity.down - thr + 1) * CONFIG.WALL_PROXIMITY_PENALTY;
     }
 
-    // IMPROVEMENT: Heavy penalty for being in a corner (walls on 2+ sides)
     let wallSides = 0;
     if (_wallProximity.left >= thr) wallSides++;
     if (_wallProximity.right >= thr) wallSides++;
@@ -554,7 +501,6 @@ function _wallEscapePenalty(dirX, dirY) {
     if (_wallProximity.down >= thr) wallSides++;
 
     if (wallSides >= 2) {
-        // Reward directions that move AWAY from the corner
         let escapeX = 0, escapeY = 0;
         if (_wallProximity.left >= thr) escapeX += 1;
         if (_wallProximity.right >= thr) escapeX -= 1;
@@ -565,7 +511,6 @@ function _wallEscapePenalty(dirX, dirY) {
             const eL = Math.sqrt(escapeX * escapeX + escapeY * escapeY);
             escapeX /= eL; escapeY /= eL;
             const dot = dirX * escapeX + dirY * escapeY;
-            // Penalize moving INTO the corner, reward moving OUT
             if (dot < 0) {
                 penalty += (-dot) * CONFIG.WALL_CORNER_PENALTY;
             }
@@ -575,9 +520,6 @@ function _wallEscapePenalty(dirX, dirY) {
     return penalty;
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  NEW: Enemy aim prediction
-// ═══════════════════════════════════════════════════════════════════════
 
 function _updateEnemyAimState(now) {
     const enemies = scanData.enemies;
@@ -614,7 +556,6 @@ function _updateEnemyAimState(now) {
         st.lastTime = now;
         st.lastUpdate = now;
 
-        // Calculate facing direction (toward us)
         const myX = scanData.myX, myY = scanData.myY;
         const dx = myX - en.x, dy = myY - en.y;
         const dL = Math.sqrt(dx * dx + dy * dy);
@@ -624,7 +565,6 @@ function _updateEnemyAimState(now) {
         }
     }
 
-    // Clean up old entries
     for (const [gid, st] of _enemyAimState) {
         if (now - st.lastUpdate > AIM_TRACK_MAX_AGE_MS) {
             _enemyAimState.delete(gid);
@@ -636,30 +576,22 @@ function _generatePredictedThreats(myX, myY) {
     _predictedThreats.length = 0;
 
     for (const [gid, st] of _enemyAimState) {
-        // Only predict from enemies that are facing us and within range
         const dx = myX - st.x, dy = myY - st.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist > 5000 || dist < 100) continue;
 
-        // Check if enemy is moving toward us (closing distance)
         const approachSpeed = -(st.vx * dx + st.vy * dy) / (dist + 1e-6);
 
-        // Predict that the enemy might shoot at our current position
-        // Create a "virtual projectile" along their facing direction
         if (st.facingX !== 0 || st.facingY !== 0) {
             const predSpeed = CONFIG.PREDICTED_PROJ_SPEED;
             const travelTime = dist / predSpeed;
 
-            // Predict where WE will be when the projectile arrives
-            const predMyX = myX;  // We don't know our future movement, use current
+            const predMyX = myX;  
             const predMyY = myY;
 
-            // Predict aim point: current position + our velocity * travel time
-            // This models the enemy leading their shot
             const leadX = myX + (_dodgeDir ? _dodgeDir.x * CONFIG.CHAR_SPEED * travelTime * 0.3 : 0);
             const leadY = myY + (_dodgeDir ? _dodgeDir.y * CONFIG.CHAR_SPEED * travelTime * 0.3 : 0);
 
-            // Direction from enemy to predicted aim point
             const aimDx = leadX - st.x;
             const aimDy = leadY - st.y;
             const aimL = Math.sqrt(aimDx * aimDx + aimDy * aimDy);
@@ -686,9 +618,6 @@ function _generatePredictedThreats(myX, myY) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  Helper functions for scoring
-// ═══════════════════════════════════════════════════════════════════════
 
 function _effectiveMinClearance(myRadius) {
     const v = myRadius * CONFIG.MIN_CLEARANCE_RADIUS_FACTOR;
@@ -703,7 +632,6 @@ function _effectiveMovingMargin() {
     return CONFIG.MOVING_EXTRA_MARGIN + bonus;
 }
 
-// IMPROVED: Better corner penalty with wall proximity integration
 function _cornerPenalty(dirX, dirY, myX, myY) {
     let penalty = 0;
 
@@ -719,7 +647,6 @@ function _cornerPenalty(dirX, dirY, myX, myY) {
             if (_wc[cy * w + (cx + 1)] & 0x80) walls++;
             if (_wc[(cy - 1) * w + cx] & 0x80) walls++;
             if (_wc[(cy + 1) * w + cx] & 0x80) walls++;
-            // IMPROVEMENT: Also check diagonals
             if (_wc[(cy - 1) * w + (cx - 1)] & 0x80) walls++;
             if (_wc[(cy - 1) * w + (cx + 1)] & 0x80) walls++;
             if (_wc[(cy + 1) * w + (cx - 1)] & 0x80) walls++;
@@ -727,21 +654,16 @@ function _cornerPenalty(dirX, dirY, myX, myY) {
             if (walls < 3) {
                 penalty += (walls > 1 ? (walls - 1) : 0) * CONFIG.CORNER_WALL_PENALTY;
             } else {
-                // IMPROVEMENT: Heavy penalty for moving into a pocket
                 penalty += walls * CONFIG.CORNER_WALL_PENALTY * 2;
             }
         }
     }
 
-    // Add wall escape penalty
     penalty += _wallEscapePenalty(dirX, dirY);
 
     return penalty;
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  IMPROVED: Threat scoring with prediction awareness
-// ═══════════════════════════════════════════════════════════════════════
 
 function _thrSingle(
     dirX, dirY,
@@ -805,7 +727,6 @@ function _thrSingle(
 
         if (tImpact >= 0) {
             if (closest < 0 || tImpact < closest) closest = tImpact;
-            // IMPROVEMENT: Scale impact score by projectile speed (faster = more dangerous)
             const speedScale = p.isPredicted ? 0.3 : Math.min(2.0, (p.speed || 1200) / 1200);
             score += (40000000 + (tField - tImpact) * 40000000) * speedScale;
             if (tImpact <= 0.12) {
@@ -868,7 +789,6 @@ function _thrSingle(
                 danger += dotB * ir * 200;
             }
         }
-        // IMPROVEMENT: Reduced danger for predicted threats (uncertain)
         if (p.isPredicted) danger *= 0.35;
         score += danger;
     }
@@ -968,9 +888,6 @@ function threatScore(dir, myX, myY, myRadius, intentDir) {
     return s + _cornerPenalty(dir.x, dir.y, myX, myY);
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  IMPROVED: Spiral search with adaptive density
-// ═══════════════════════════════════════════════════════════════════════
 
 const _spiralBuf = new Array(64);
 for (let _i = 0; _i < 64; _i++) _spiralBuf[_i] = { x: 0, y: 0 };
@@ -988,7 +905,6 @@ function spiralSearch(myX, myY, myRadius, intentDir) {
     const awX = myX - cx, awY = myY - cy;
     if (awX * awX + awY * awY < 1e-6) return null;
     const baseAngle = Math.atan2(awY, awX);
-    // IMPROVEMENT: More samples for better coverage
     const SAMPLES = Math.min(64, CONFIG.SPIRAL_SAMPLES * 2);
     const STEP = Math.PI / (SAMPLES >> 1);
     const cap = SAMPLES > _spiralBuf.length ? _spiralBuf.length : SAMPLES;
@@ -1012,9 +928,6 @@ function spiralSearch(myX, myY, myRadius, intentDir) {
     return { dir: { x: best.x, y: best.y }, score: bestScore };
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  IMPROVED: Direction selection with refinement step
-// ═══════════════════════════════════════════════════════════════════════
 
 function chooseBestDirection(myX, myY, myRadius, intentDir) {
     const samples = CACHED_DIRECTIONS;
@@ -1041,14 +954,13 @@ function chooseBestDirection(myX, myY, myRadius, intentDir) {
         return { dir: (intentDir.x !== 0 || intentDir.y !== 0) ? intentDir : samples[0], invalid: true };
     }
 
-    // IMPROVEMENT: Refinement step - search between best and neighbors at higher resolution
     if (samples.length >= 8) {
         const refineAngle = (Math.PI * 2) / samples.length;
         const baseAngle = Math.atan2(best.y, best.x);
         const refineSteps = 5;
         const refineSpread = refineAngle * 0.5;
         for (let i = 0; i < refineSteps; i++) {
-            const t = (i / (refineSteps - 1)) * 2 - 1; // -1 to +1
+            const t = (i / (refineSteps - 1)) * 2 - 1; 
             const angle = baseAngle + t * refineSpread;
             const d = { x: Math.cos(angle), y: Math.sin(angle) };
             const s = threatScore(d, myX, myY, myRadius, intentDir);
@@ -1066,9 +978,6 @@ function chooseBestDirection(myX, myY, myRadius, intentDir) {
     return { dir: best };
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  IMPROVED: Velocity obstacle with wider safe-set search
-// ═══════════════════════════════════════════════════════════════════════
 
 function isVelocityUnsafeIdx(idx, dir, myX, myY, myRadius) {
     if (idx >= 0 && (_voCacheValid & (1 << idx))) return _voCache[idx] > 0;
@@ -1123,7 +1032,6 @@ function applyVO(dir, dirIdx, myX, myY, myRadius, intentDir) {
         if (s < bestScore) { bestScore = s; best = samples[i]; }
     }
     if (!foundSafe) {
-        // IMPROVEMENT: If no safe direction found, try the "least unsafe" one
         let leastBadScore = 1e18;
         let leastBadDir = dir;
         for (let i = 0; i < samples.length; i++) {
@@ -1150,9 +1058,6 @@ function getClosestImpactTime(myX, myY, myRadius, movingDir, tMax) {
     return bestT;
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  IMPROVED: Should-keep-current with hysteresis
-// ═══════════════════════════════════════════════════════════════════════
 
 const _pairBuf = [{ x: 0, y: 0 }, { x: 0, y: 0 }];
 
@@ -1173,15 +1078,11 @@ function shouldKeepCurrentUrgentDodge(curr, next, myX, myY, myRadius, intentDir)
     _pairBuf[0].x = curr.x; _pairBuf[0].y = curr.y;
     _pairBuf[1].x = next.x; _pairBuf[1].y = next.y;
     _scoreBatchInto(_pairBuf, myX, myY, myRadius, intentDir, _batchScores);
-    // IMPROVEMENT: Slightly more hysteresis to avoid jitter
     return _batchScores[0] <= _batchScores[1] * 1.20;
 }
 
 const _zeroDir = { x: 0, y: 0 };
 
-// ═══════════════════════════════════════════════════════════════════════
-//  Brawler classification
-// ═══════════════════════════════════════════════════════════════════════
 
 const CONVERGENCE_BRAWLERS = new Set([
     'NANI',
@@ -1230,9 +1131,6 @@ function inferProjectileOwner(x, y, enemies) {
     return best ? { brawlerId: best.brawlerId, brawlerName: best.brawlerName || null, x: best.x, y: best.y } : null;
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  Projectile initialization & sync (mostly unchanged, with isSuper)
-// ═══════════════════════════════════════════════════════════════════════
 
 function _initFromCtor(projPtr) {
     if (!projPtr || projPtr.isNull() || !_base || !_fns) return;
@@ -1280,7 +1178,6 @@ function _initFromCtor(projPtr) {
 
         const ignoredType = _isIgnoredProjectile(ownerName, isBeam);
 
-        // IMPROVEMENT: Detect super projectiles by speed/radius patterns
         const isSuper = !ignoredType && (
             (speed > 0 && radius > 150) ||
             (ownerName && SUPER_DODGE_RADIUS_OVERRIDE[ownerName] !== undefined && speed > 800)
@@ -1472,15 +1369,11 @@ function buildActiveList(myX, myY, myRadius, tileX, tileY) {
         _activeProjs.push(p);
     }
 
-    // IMPROVEMENT: Add predicted threats to active list
     for (let i = 0; i < _predictedThreats.length; i++) {
         _activeProjs.push(_predictedThreats[i]);
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  IMPROVED: Main update loop with adaptive direction count
-// ═══════════════════════════════════════════════════════════════════════
 
 export function updateAutododge() {
     if (!state.autododge) return;
@@ -1506,20 +1399,16 @@ export function updateAutododge() {
 
     CONFIG.CHAR_SPEED = scanData.mySpeed;
 
-    // NEW: Update enemy aim prediction
     _updateEnemyAimState(now);
 
-    // NEW: Update wall proximity
     _updateWallProximity(myX, myY);
 
     syncProjectiles(now);
 
-    // NEW: Generate predicted threats
     _generatePredictedThreats(myX, myY);
 
     buildActiveList(myX, myY, myRadius, tileX, tileY);
 
-    // IMPROVEMENT: Adaptive direction count based on threat density
     const threatCount = _activeProjs.length;
     if (threatCount !== _lastThreatCount) {
         const oldCount = _adaptiveDirCount;
@@ -1539,7 +1428,6 @@ export function updateAutododge() {
     _cacheValid = false;
     _precomputeCachedDirScores(myX, myY, myRadius, _zeroDir);
 
-    // NEW: Detect juke pattern
     _detectJukePattern();
 
     const intentDir = _zeroDir;
@@ -1579,11 +1467,10 @@ export function updateAutododge() {
     lastSafeDirTime = now;
     _dodgeDir = safeDir;
     if (!sameDirection(prevDir, safeDir)) {
-        // IMPROVEMENT: Variable commit time based on threat urgency
         const closestT = getClosestImpactTime(myX, myY, myRadius, safeDir, getUrgentWindow());
         let commitMs = CONFIG.DODGE_COMMIT_MS;
         if (closestT >= 0 && closestT < 0.2) {
-            commitMs = Math.max(commitMs, 150); // Longer commit when very urgent
+            commitMs = Math.max(commitMs, 150); 
         }
         g_dodgeUntil = now + commitMs;
         _lockOriginX = myX;
@@ -1614,11 +1501,10 @@ export function setupAutododge(base) {
             if (state.autododge && _dodgeDir) {
                 const d = _dodgeDir;
                 if (!isFinite(d.x) || !isFinite(d.y)) return;
-                // IMPROVEMENT: Variable move distance based on threat proximity
                 let moveDist = 500;
                 const closestT = getClosestImpactTime(scanData.myX, scanData.myY, scanData.myRadius || 60, d, getUrgentWindow());
                 if (closestT >= 0 && closestT < 0.15) {
-                    moveDist = 600;  // Move further when threat is very close
+                    moveDist = 600;  
                 }
                 tx = Math.round(scanData.myX + d.x * moveDist);
                 ty = Math.round(scanData.myY + d.y * moveDist);
