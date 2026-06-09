@@ -8,9 +8,11 @@ import { notifyBattleModeChanged } from "./utils/wallCache.js";
 import { setupAimbot, updateAimbot, resetAimbot } from "./features/aimbot.js";
 import { setupAutododge, updateAutododge, resetAutododge } from "./features/autododge.js";
 import { setupName, setTag as setNameTag } from "./features/name.js";
-import { setupKillaura, updateKillaura } from "./features/killaura.js";
+import { setupKillaura, updateKillaura, resetKillaura } from "./features/killaura.js";
 import { setupESP, updateESP, resetESP } from "./features/esp.js";
 import { setupIPGrabber, getServerIP } from "./features/ipgrabber.js";
+import { setupAutoShoot, updateAutoShoot, resetAutoShoot } from "./features/autoshoot.js";
+import { initBallDetection, updateBallState, resetBallState } from "./features/ballDetect.js";
 import {
     setState, setupSafe, getFlags,
     FLAG_AIMBOT, FLAG_AUTODODGE, FLAG_ESP, FLAG_SPINNER, FLAG_KILLAURA,
@@ -35,6 +37,8 @@ function startAgent() {
             setupSafe('killaura',   () => setupKillaura(base));
             setupSafe('esp',        () => setupESP(base));
             setupSafe('ipgrabber',  () => setupIPGrabber(base));
+            setupSafe('autoshoot',  () => setupAutoShoot(base));
+            setupSafe('ballDetect', () => initBallDetection(base));
 
             let lastBM = null;
 
@@ -49,6 +53,9 @@ function startAgent() {
                             resetAimbot();
                             resetAutododge();
                             resetESP();
+                            resetKillaura();
+                            resetAutoShoot();
+                            resetBallState();
                             resetScannerCache();
                             notifyBattleModeChanged(bm);
                         }
@@ -59,8 +66,12 @@ function startAgent() {
                         const now = Date.now();
                         updateScanner(bm, now);
 
-                        if (f & _AIM_OR_KILL)   updateAimbot(now);
-                        if (f & FLAG_KILLAURA)  updateKillaura(now);
+                        if (f & _AIM_OR_KILL) {
+                            updateBallState();
+                            updateAimbot(now);
+                            updateKillaura(now);
+                            updateAutoShoot(now);
+                        }
                         if (f & FLAG_AUTODODGE) updateAutododge(now);
                         if (f & FLAG_ESP)       updateESP();
                     } catch (_) {
@@ -87,13 +98,15 @@ rpc.exports = {
     },
 
     togglefeature(feature, value) {
-        const ALLOWED = { aimbot: 1, autododge: 1, esp: 1, name: 1, spinner: 1, killaura: 1 };
+        const ALLOWED = { aimbot: 1, autododge: 1, esp: 1, name: 1, spinner: 1, killaura: 1, autoshoot: 1 };
         if (!ALLOWED[feature]) return;
         setState(feature, !!value);
         if (!value) {
             if (feature === 'aimbot')    resetAimbot();
             if (feature === 'autododge') resetAutododge();
             if (feature === 'esp')       resetESP();
+            if (feature === 'killaura')  resetKillaura();
+            if (feature === 'autoshoot') resetAutoShoot();
         }
     },
 
@@ -101,6 +114,9 @@ rpc.exports = {
         resetAimbot();
         resetAutododge();
         resetESP();
+        resetKillaura();
+        resetAutoShoot();
+        resetBallState();
     },
 
     getserverip() { return getServerIP(); },

@@ -6,6 +6,10 @@ let g_wallW = 0;
 let g_wallH = 0;
 let g_builtForPtr = null;
 
+const _losCache = new Map();
+const LOS_CACHE_MAX = 512;
+const LOS_CACHE_TTL_MS = 150;
+
 function rebuild(tm) {
     if (!tm || tm.isNull()) return;
     if (g_wall && g_builtForPtr && !g_builtForPtr.isNull() && g_builtForPtr.equals(tm)) return;
@@ -38,6 +42,7 @@ function rebuild(tm) {
     g_wallW = w;
     g_wallH = h;
     g_builtForPtr = tm;
+    _losCache.clear();
 }
 
 export function notifyBattleModeChanged(bm) {
@@ -56,11 +61,17 @@ export function losCheck(wx0, wy0, wx1, wy1, checkBit) {
     const wall = g_wall;
     if (!wall) return true;
     const w = g_wallW, h = g_wallH;
+
     let cx = (wx0 / 300) | 0;
     let cy = (wy0 / 300) | 0;
     const tx = (wx1 / 300) | 0;
     const ty = (wy1 / 300) | 0;
     if (cx === tx && cy === ty) return true;
+
+    const cacheKey = (((cx & 0x7f) << 21) | ((cy & 0x7f) << 14) | ((tx & 0x7f) << 7) | (ty & 0x7f)) | 0;
+    const now = Date.now();
+    const cached = _losCache.get(cacheKey);
+    if (cached !== undefined && now - cached.ts < LOS_CACHE_TTL_MS) return cached.v;
 
     const dx = Math.abs(tx - cx);
     const dy = -Math.abs(ty - cy);
@@ -69,13 +80,31 @@ export function losCheck(wx0, wy0, wx1, wy1, checkBit) {
     let err = dx + dy;
     const maxSteps = dx + (-dy) + 2;
 
+    let result = true;
     for (let n = 0; n < maxSteps; n++) {
         const e2 = 2 * err;
         if (e2 >= dy) { err += dy; cx += sx; }
         if (e2 <= dx) { err += dx; cy += sy; }
-        if (cx === tx && cy === ty) return true;
+        if (cx === tx && cy === ty) break;
         if (cx < 0 || cx >= w || cy < 0 || cy >= h) continue;
-        if (wall[cy * w + cx] & checkBit) return false;
+        if (wall[cy * w + cx] & checkBit) { result = false; break; }
     }
-    return true;
+
+    if (_losCache.size < LOS_CACHE_MAX) {
+        _losCache.set(cacheKey, { v: result, ts: now });
+    } else {
+        let oldest = null;
+        let oldestTs = Infinity;
+        for (const [k, val] of _losCache) {
+            if (val.ts < oldestTs) { oldestTs = val.ts; oldest = k; }
+        }
+        if (oldest !== null) _losCache.delete(oldest);
+        _losCache.set(cacheKey, { v: result, ts: now });
+    }
+
+    return result;
+}
+
+export function clearLosCache() {
+    _losCache.clear();
 }

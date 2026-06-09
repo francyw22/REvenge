@@ -1,8 +1,9 @@
-export const FLAG_AIMBOT    = 1 << 0;
-export const FLAG_AUTODODGE = 1 << 1;
-export const FLAG_ESP       = 1 << 2;
-export const FLAG_SPINNER   = 1 << 3;
-export const FLAG_KILLAURA  = 1 << 4;
+export const FLAG_AIMBOT     = 1 << 0;
+export const FLAG_AUTODODGE  = 1 << 1;
+export const FLAG_ESP        = 1 << 2;
+export const FLAG_SPINNER    = 1 << 3;
+export const FLAG_KILLAURA   = 1 << 4;
+export const FLAG_AUTOSHOOT  = 1 << 5;
 
 const FLAG_OF = {
     aimbot:    FLAG_AIMBOT,
@@ -10,6 +11,7 @@ const FLAG_OF = {
     esp:       FLAG_ESP,
     spinner:   FLAG_SPINNER,
     killaura:  FLAG_KILLAURA,
+    autoshoot: FLAG_AUTOSHOOT,
 };
 
 let _flags = 0;
@@ -20,6 +22,7 @@ export const state = {
     esp:       false,
     spinner:   false,
     killaura:  false,
+    autoshoot: false,
 };
 
 export function setState(feature, value) {

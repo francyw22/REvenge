@@ -7,6 +7,7 @@ import { getFunctions } from "../core/functions.js";
 import { estimateTargetVelocity, solveIntercept } from "../libs/math_aim.js";
 import { getDodgeDir } from "./autododge.js";
 import { CFG } from "../utils/config.js";
+import { hasBall } from "./ballDetect.js";
 
 const targets = new Map();
 let bestTargetId = null;
@@ -150,6 +151,8 @@ function resolveProjSpeed() {
 }
 
 export function computeAimForTarget(targetId, ownX, ownY) {
+    if (hasBall()) return null;
+
     const tgt = targets.get(targetId);
     if (!tgt || tgt.histX.d.length < 2) return null;
 
@@ -185,6 +188,8 @@ export function setupAimbot(base) {
         onEnter: function (args) {
             if (!state.aimbot) return;
             if (scanData.lastUpdate === 0) return;
+            if (hasBall()) return;
+
             const enemyId = bestTargetId;
             if (!enemyId || !targets.has(enemyId)) return;
 
@@ -239,6 +244,8 @@ export function updateAimbot(now) {
     if (now === undefined) now = Date.now();
     const prevTargetId = bestTargetId;
     bestTargetId = null;
+
+    if (hasBall()) return;
 
     const enemies = scanData.enemies || [];
     const activeEnemies = [];
